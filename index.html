@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kahoot Bot — пульт управления</title>
+<style>
+  :root { --violet:#7c3aed; --bg:#14101f; --card:#1e1b2e; --line:#2e2a45; --txt:#f4f2ff; --mut:#a7a3c4; --green:#22c55e; --red:#ef4444; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  header { background:linear-gradient(135deg,#6d28d9,#4c1d95); padding:28px 20px; text-align:center; }
+  header h1 { margin:0 0 6px; font-size:28px; }
+  header p { margin:0; opacity:.85; }
+  main { max-width:860px; margin:0 auto; padding:20px 16px 60px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:16px; }
+  .card h2 { margin:0 0 12px; font-size:18px; }
+  label { display:block; margin:10px 0 4px; color:var(--mut); font-size:13px; }
+  input[type=text], input[type=number], textarea, select {
+    width:100%; background:#12101d; color:var(--txt); border:1px solid var(--line);
+    border-radius:8px; padding:9px 11px; font-size:14px;
+  }
+  textarea { min-height:90px; font-family:ui-monospace,monospace; resize:vertical; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:640px){ .row{grid-template-columns:1fr;} }
+  .btn { display:inline-block; border:0; border-radius:9px; padding:10px 18px; font-size:15px; font-weight:700; cursor:pointer; color:#fff; background:var(--violet); }
+  .btn:hover { filter:brightness(1.15); }
+  .btn.ghost { background:#2e2a45; }
+  .btn.green { background:var(--green); }
+  .btnrow { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+  #out { width:100%; min-height:180px; background:#0d0b16; color:#c4f5c4; border:1px solid var(--line); border-radius:8px; padding:10px; font:12px/1.5 ui-monospace,monospace; }
+  ol.steps li { margin-bottom:8px; }
+  code { background:#12101d; padding:1px 7px; border-radius:6px; font-size:13px; }
+  .warn { background:#2a1a10; border:1px solid #9a6a2f; border-radius:10px; padding:12px 14px; font-size:13.5px; }
+  .ok { color:var(--green); } .err { color:var(--red); }
+  footer { text-align:center; color:var(--mut); font-size:12.5px; padding:20px; }
+  .hint { font-size:12.5px; color:var(--mut); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 Kahoot Bot — пульт</h1>
+  <p>Настрой ботов (PIN, ники, количество) → получи готовый скрипт → запусти на странице kahoot.it</p>
+</header>
+<main>
+
+  <div class="card warn">
+    <b>Как это работает:</b> браузер блокирует запросы к Kahoot с чужих сайтов, поэтому сам скрипт выполняется
+    <b>на странице kahoot.it</b> (через Tampermonkey или вставку в консоль). Этот сайт только собирает скрипт под твои настройки.
+  </div>
+
+  <div class="card">
+    <h2>1. Игра</h2>
+    <label>PIN игры (с экрана хоста)</label>
+    <input type="text" id="pin" inputmode="numeric" placeholder="например 1234567">
+    <div class="row">
+      <div>
+        <label>Quiz ID (UUID публичной викторины) — самый точный способ</label>
+        <input type="text" id="quizId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+      </div>
+      <div>
+        <label>…или точное название викторины (автпоиск ответов)</label>
+        <input type="text" id="quizName" placeholder="World Geography: Famous Landmarks">
+      </div>
+    </div>
+    <div class="hint">Без Quiz ID / названия боты отвечают запасным вариантом. Приватные викторины найти нельзя.</div>
+  </div>
+
+  <div class="card">
+    <h2>2. Боты и ники</h2>
+    <div class="row">
+      <div>
+        <label>Количество ботов</label>
+        <input type="number" id="count" value="3" min="1" max="100">
+      </div>
+      <div>
+        <label>Шаблон ника (<code>#{i}</code> = номер)</label>
+        <input type="text" id="pattern" value="Bot #{i}">
+      </div>
+    </div>
+    <label>…или свои ники (каждый с новой строки — приоритет над шаблоном)</label>
+    <textarea id="names" placeholder="CoolHacker&#10;Умник&#10;xX_Pro_Xx"></textarea>
+    <div class="btnrow">
+      <button class="btn ghost" id="genNames">🎲 Сгенерировать ники</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. Ответы</h2>
+    <div class="row">
+      <div>
+        <label>Задержка перед ответом, мс (меньше = больше очков)</label>
+        <input type="number" id="delay" value="600" min="0" max="20000" step="100">
+      </div>
+      <div>
+        <label>Случайный разброс задержки, мс</label>
+        <input type="number" id="jitter" value="800" min="0" max="20000" step="100">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Запасной вариант без ответов (0=красный,1=синий,2=жёлтый,3=зелёный)</label>
+        <input type="number" id="fallback" value="0" min="0" max="3">
+      </div>
+      <div>
+        <label>2FA-последовательность (например rbyg), пусто = спросить</label>
+        <input type="text" id="twofa" placeholder="" maxlength="4">
+      </div>
+    </div>
+    <label style="margin-top:10px"><input type="checkbox" id="alwaysCorrect" checked> Всегда отвечать правильно (когда ответы известны)</label>
+  </div>
+
+  <div class="card">
+    <h2>4. Готовый скрипт</h2>
+    <div class="btnrow">
+      <button class="btn green" id="generate">⚙️ Собрать скрипт</button>
+      <button class="btn" id="copyBtn" disabled>📋 Копировать</button>
+      <button class="btn ghost" id="dlUser" disabled>⬇️ .user.js (Tampermonkey)</button>
+      <button class="btn ghost" id="dlJs" disabled>⬇️ .js (консоль)</button>
+    </div>
+    <p class="hint" id="status">Нажми «Собрать скрипт».</p>
+    <textarea id="out" readonly spellcheck="false"></textarea>
+  </div>
+
+  <div class="card">
+    <h2>5. Запуск</h2>
+    <ol class="steps">
+      <li><b>Вариант А (удобно):</b> установи расширение <b>Tampermonkey</b> → нажми «.user.js» выше → откроется установка → «Установить». Затем открой <code>kahoot.it</code> — боты заведутся сами с твоими настройками.</li>
+      <li><b>Вариант Б:</b> открой <code>kahoot.it</code> в браузере → нажми <code>Ctrl+Shift+J</code> (консоль) → вставь скрипт из поля выше → Enter.</li>
+      <li>На странице появится фиолетовая панель: статусы ботов, лог, очки, ввод 2FA, кнопка Stop.</li>
+      <li>Боты сами зайдут в лобби по PIN, дождутся старта и будут отвечать правильно. Для максимума очков ставь маленькую задержку.</li>
+    </ol>
+    <div class="warn">⚠️ Используй только в своих/учебных играх или с разрешения хоста. Зафлуживание чужих игр — нарушение правил Kahoot, ботов могут кикнуть.</div>
+  </div>
+
+</main>
+<footer>Kahoot Bot Panel · движок: <code>bot/kahoot-bot.js</code> · работает в контексте kahoot.it</footer>
+
+<script>
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  var engineCache = null, lastScript = '', lastUserJs = '';
+
+  var FUNNY = ['ТёмныйЛорд','Капибара','Умник','xX_Тень_Xx','Банан','Про100_Лёха','Невидимка','Крекер','СуперМозг','Ленивец','Пиксель','ГрозаУчителей','Аноним','Читер007','Звезда','Молния','Котлета','Джедай','Пельмень','Ракета'];
+
+  function engine() {
+    if (engineCache) return Promise.resolve(engineCache);
+    return fetch('bot/kahoot-bot.js').then(function(r){
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    }).then(function(t){ engineCache = t; return t; });
+  }
+
+  $('genNames').onclick = function(){
+    var n = Math.max(1, Math.min(100, parseInt($('count').value, 10) || 3));
+    var pool = FUNNY.slice(), out = [];
+    for (var i = 0; i < n; i++) {
+      if (!pool.length) pool = FUNNY.slice();
+      out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    $('names').value = out.join('\n');
+  };
+
+  function collectConfig() {
+    var names = $('names').value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
+    var count = Math.max(1, Math.min(100, parseInt($('count').value, 10) || 1));
+    return {
+      pin: $('pin').value.replace(/\D/g, ''),
+      names: names,
+      namePattern: $('pattern').value || 'Bot #{i}',
+      count: names.length || count,
+      quizId: $('quizId').value.trim(),
+      quizName: $('quizName').value.trim(),
+      alwaysCorrect: $('alwaysCorrect').checked,
+      fallbackChoice: Math.max(0, Math.min(3, parseInt($('fallback').value, 10) || 0)),
+      answerDelayMs: Math.max(0, parseInt($('delay').value, 10) || 0),
+      answerJitterMs: Math.max(0, parseInt($('jitter').value, 10) || 0),
+      twoFactor: $('twofa').value.trim().toLowerCase()
+    };
+  }
+
+  function download(filename, text) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/javascript' }));
+    a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+
+  $('generate').onclick = function(){
+    var cfg = collectConfig();
+    if (!cfg.pin) { $('status').innerHTML = '<span class="err">Введи PIN игры.</span>'; return; }
+    $('status').textContent = 'Собираю…';
+    engine().then(function(eng){
+      var head = 'window.KAHOOT_BOT_CONFIG=' + JSON.stringify(cfg) + ';\nwindow.KAHOOT_BOT_AUTORUN=true;\n';
+      lastScript = head + eng;
+      lastUserJs = '// ==UserScript==\n// @name         Kahoot Bot (PIN ' + cfg.pin + ')\n' +
+        '// @version      1.0\n// @description  Kahoot auto-answer bots\n' +
+        '// @match        https://kahoot.it/*\n// @grant        none\n// ==/UserScript==\n' + lastScript;
+      $('out').value = lastUserJs;
+      $('copyBtn').disabled = $('dlUser').disabled = $('dlJs').disabled = false;
+      $('status').innerHTML = '<span class="ok">Готово:</span> PIN ' + cfg.pin + ', ботов: ' +
+        (cfg.names.length || cfg.count) + (cfg.quizId ? ', Quiz ID задан' : (cfg.quizName ? ', поиск: «' + cfg.quizName + '»' : ', <b>без ответов (fallback)</b>'));
+    }).catch(function(e){
+      $('status').innerHTML = '<span class="err">Не смог загрузить движок: ' + e.message + '</span>';
+    });
+  };
+
+  $('copyBtn').onclick = function(){
+    navigator.clipboard.writeText(lastUserJs).then(function(){
+      $('status').innerHTML = '<span class="ok">Скопировано! Вставь в консоль на kahoot.it или в Tampermonkey.</span>';
+    });
+  };
+  $('dlUser').onclick = function(){ download('kahoot-bot.user.js', lastUserJs); };
+  $('dlJs').onclick = function(){ download('kahoot-bot.js', lastScript); };
+})();
+</script>
+</body>
+</html>
