@@ -50,6 +50,26 @@
    *   message = single-quoted string, offset = equation after '='
    *   decoded = replace each char: chr((code*pos + eval(offset)) % 77 + 48)
    * Legacy angular-style format is handled as a fallback. */
+  function solvePyStyle(challenge) {
+    // Same approach as the proven `kahoot` PyPI package:
+    // strip tabs/unicode spaces, take offset equation after "offset = ",
+    // take message after "this, '".
+    var text = challenge.replace(/\t/g, '').replace(/[^\x00-\x7F]/g, '');
+    var parts = text.split('offset = ');
+    if (parts.length < 2) return null;
+    var offset = eval(parts[1].split(';')[0]);
+    if (typeof offset !== 'number' || isNaN(offset)) return null;
+    var msgParts = text.split("this, '");
+    if (msgParts.length < 2) return null;
+    var message = msgParts[1].split("'")[0];
+    if (!message) return null;
+    var out = '';
+    for (var position = 0; position < message.length; position++) {
+      out += String.fromCharCode(((message.charCodeAt(position) * position + offset) % 77) + 48);
+    }
+    return out;
+  }
+
   function solveModern(challenge) {
     var m = /'(\d*[a-z]*[A-Z]*)\w+'/.exec(challenge);
     if (!m) return null;
@@ -86,18 +106,35 @@
   }
 
   function solveChallenge(challenge) {
+    var err = null;
+    try {
+      var py = solvePyStyle(challenge);
+      if (py) return py;
+    } catch (e) { err = e; }
     try {
       var modern = solveModern(challenge);
       if (modern) return modern;
-    } catch (e) { /* fall through to legacy */ }
+    } catch (e) { err = e; }
     return solveLegacy(challenge);
   }
 
+  function b64ToUtf8(b64) {
+    var bin = atob(b64);
+    if (typeof TextDecoder !== 'undefined') {
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder('utf-8').decode(bytes);
+    }
+    try { return decodeURIComponent(escape(bin)); } catch (e) { return bin; }
+  }
+
   function xorTokens(headerTokenB64, solution) {
-    var bin = atob(headerTokenB64);
+    // XOR over the UTF-8 decoded token — exactly like Kahoot's own
+    // client, kahoot.js and the `kahoot` Python package do it.
+    var decoded = b64ToUtf8(headerTokenB64);
     var out = '';
-    for (var i = 0; i < bin.length; i++) {
-      out += String.fromCharCode(bin.charCodeAt(i) ^ solution.charCodeAt(i % solution.length));
+    for (var i = 0; i < decoded.length; i++) {
+      out += String.fromCharCode(decoded.charCodeAt(i) ^ solution.charCodeAt(i % solution.length));
     }
     return out;
   }
@@ -333,7 +370,7 @@
         self.setState('joining');
         self.comet.publish('/service/controller', {
           gameid: CFG.pin, host: 'kahoot.it', name: self.name, type: 'login',
-          content: JSON.stringify({ device: { userAgent: navigator.userAgent, screen: { width: 1920, height: 1080 } } })
+          content: JSON.stringify({ device: { userAgent: (typeof navigator !== 'undefined' ? navigator.userAgent : 'KahootBot/1.0'), screen: { width: 1920, height: 1080 } } })
         });
       })
       .catch(function (e) {
@@ -561,7 +598,7 @@
   }
 
   // expose for tests (Node) and console tinkering
-  var API = { config: CFG, solveChallenge: solveModern, solveChallengeLegacy: solveLegacy, parseAnswers: parseAnswers, matchesQuiz: matchesQuiz, xorTokens: xorTokens, Bot: Bot, main: main };
+  var API = { config: CFG, solveChallenge: solveChallenge, solveModern: solveModern, solveChallengeLegacy: solveLegacy, parseAnswers: parseAnswers, matchesQuiz: matchesQuiz, xorTokens: xorTokens, Bot: Bot, main: main, buildNames: buildNames };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else { window.KahootBot = API; }
 
