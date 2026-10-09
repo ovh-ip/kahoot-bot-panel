@@ -369,7 +369,7 @@
       .then(function () {
         self.setState('joining');
         self.comet.publish('/service/controller', {
-          gameid: CFG.pin, host: 'kahoot.it', name: self.name, type: 'login',
+          gameid: parseInt(CFG.pin, 10), host: 'kahoot.it', name: self.name, type: 'login',
           content: JSON.stringify({ device: { userAgent: (typeof navigator !== 'undefined' ? navigator.userAgent : 'KahootBot/1.0'), screen: { width: 1920, height: 1080 } } })
         });
       })
@@ -391,6 +391,14 @@
           log(self.name + ': retrying with new name...');
           setTimeout(function () { self.run(); }, 800);
         } else self.setState('rejected');
+      } else {
+        // CRITICAL: confirm join with the namerator packet, otherwise the
+        // server accepts us (loginResponse/NameAccept) but never shows us
+        // in the host lobby. Same as the reference `kahoot` package does.
+        self.comet.publish('/service/controller', {
+          gameid: parseInt(CFG.pin, 10), host: 'kahoot.it', type: 'message', id: 16,
+          content: JSON.stringify({ usingNamerator: false })
+        });
       }
       return;
     }
@@ -461,7 +469,7 @@
       if (stopped || !self.comet || !self.comet.connected) return;
       var a = self.pickAnswer(q);
       self.comet.publish('/service/controller', {
-        gameid: CFG.pin, host: 'kahoot.it', type: 'message', id: 45,
+        gameid: parseInt(CFG.pin, 10), host: 'kahoot.it', type: 'message', id: 45,
         content: JSON.stringify({ choice: a.choice, questionIndex: a.q, meta: { lag: 30 }, type: a.type })
       });
       var label = Array.isArray(a.choice) ? a.choice.map(function (c) { return COLORS[c]; }).join('+') : COLORS[a.choice];
@@ -485,7 +493,7 @@
     var steps = String(seq).toLowerCase().split('').map(function (c) { return map[c]; }).filter(function (n) { return n !== undefined; });
     if (steps.length !== 4) { log(this.name + ': bad 2FA sequence, need 4 of r/b/y/g'); return; }
     this.comet.publish('/service/controller', {
-      gameid: CFG.pin, host: 'kahoot.it', type: 'message', id: 50,
+      gameid: parseInt(CFG.pin, 10), host: 'kahoot.it', type: 'message', id: 50,
       content: JSON.stringify({ sequence: steps.join('') })
     });
     log(this.name + ': 2FA submitted');
